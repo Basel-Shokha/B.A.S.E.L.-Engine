@@ -4,15 +4,13 @@
 # ============================================================
 
 CXX      := g++
-CXXFLAGS := -std=c++17 -O2 -Wall
+CXXFLAGS := -std=c++17 -O2 -w
 LDFLAGS  := -lpthread
 
 TARGET := BASEL
 SRCS   := main.cpp Graph.cpp MinHeap.cpp FlowNetwork.cpp MapLoader.cpp \
            EVRoutePlanner.cpp FleetDispatcher.cpp SwarmController.cpp Utilities.cpp
 OBJS   := $(SRCS:.cpp=.o)
-
-OS := $(shell uname -s 2>/dev/null || echo Windows)
 
 # ============================================================
 #  Default: build and run
@@ -21,10 +19,13 @@ OS := $(shell uname -s 2>/dev/null || echo Windows)
 .PHONY: all
 all: $(TARGET)
 	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "  B.A.S.E.L. Engine ready."
-	@echo "  Pipe a JSON request to ./$(TARGET)"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "╔══════════════════════════════════════════════════╗"
+	@echo "║          B.A.S.E.L. Engine is ready.             ║"
+	@echo "║                                                  ║"
+	@echo "║  Feed it a JSON request:                         ║"
+	@echo "║  echo '{...}' | ./BASEL                          ║"
+	@echo "║  cat request.json | ./BASEL                      ║"
+	@echo "╚══════════════════════════════════════════════════╝"
 	@echo ""
 
 # ============================================================
@@ -33,7 +34,6 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
-	@echo "  ✓ Build complete → ./$(TARGET)"
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

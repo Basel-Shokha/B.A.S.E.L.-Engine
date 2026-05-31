@@ -41,9 +41,6 @@ int main() {
                 swarmController.execute();
             }
 
-            std::cout << "[SUCCESS] Module " << mode << " finished in " << duration << "ms." << std::endl;
-
-
             fs::remove("request.json");
 
         }
