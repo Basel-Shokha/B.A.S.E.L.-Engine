@@ -22,11 +22,15 @@ all: $(TARGET)
 	@echo "╔══════════════════════════════════════════════════╗"
 	@echo "║          B.A.S.E.L. Engine is ready.             ║"
 	@echo "║                                                  ║"
-	@echo "║  Feed it a JSON request:                         ║"
-	@echo "║  echo '{...}' | ./BASEL                          ║"
-	@echo "║  cat request.json | ./BASEL                      ║"
+	@echo "║  Starting engine — drop a request.json file      ║"
+	@echo "║  in this folder to trigger a solver.             ║"
+	@echo "║                                                  ║"
+	@echo "║  Modes: f1 = EV Route                            ║"
+	@echo "║         f2 = Fleet Dispatch                      ║"
+	@echo "║         f3 = Swarm Control                       ║"
 	@echo "╚══════════════════════════════════════════════════╝"
 	@echo ""
+	./$(TARGET)
 
 # ============================================================
 #  Compile
