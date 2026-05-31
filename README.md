@@ -11,6 +11,89 @@ A fleet intelligence and routing engine built entirely from scratch in C++. Load
 
 ---
 
+## How do you want to run it?
+
+### Option A — Just use the browser (no setup)
+
+Go to the live demo link above. Pick a solver, fill in the map UI, and submit. Nothing to install.
+
+---
+
+### Option B — Run it locally on your machine
+
+The local version runs the full C++ engine natively — same algorithm, direct access, no browser in the way.
+
+#### Step 1 — Prerequisites
+
+You need a C++ compiler:
+
+- **Linux:** `sudo apt install g++`
+- **macOS:** `xcode-select --install`
+- **Windows:** Use WSL (recommended) or install [MinGW-w64](https://www.mingw-w64.org/)
+
+No other dependencies. The only external library is `json.hpp` (nlohmann), already bundled in `External Libraries/`.
+
+#### Step 2 — Clone the repo
+
+```bash
+git clone https://github.com/Basel-Shokha/B.A.S.E.L.-Engine.git
+cd B.A.S.E.L.-Engine
+```
+
+#### Step 3 — Build and start the engine
+
+```bash
+make
+```
+
+Compiles everything and launches the engine immediately. You'll see:
+
+```
+[B.A.S.E.L. Engine] Engine is LIVE. Waiting for UI clicks...
+```
+
+The engine is now running and watching for a `request.json` file in the same folder.
+
+#### Step 4 — Send it a request
+
+Drop a `request.json` file in the project folder. The engine detects it automatically, runs the solver, writes `response.json`, and goes back to waiting.
+
+**EV Route (f1):**
+```json
+{
+  "mode": "f1",
+  "start": { "lat": 32.08, "lng": 34.78 },
+  "end":   { "lat": 31.76, "lng": 35.23 },
+  "battery_meters": 80000,
+  "charging_stations": [{ "lat": 31.90, "lng": 35.00 }]
+}
+```
+
+**Fleet Dispatch (f2):**
+```json
+{
+  "mode": "f2",
+  "robots": [...],
+  "vehicles": [...]
+}
+```
+
+**Swarm Control (f3):**
+```json
+{
+  "mode": "f3",
+  "start": { "lat": 32.08, "lng": 34.78 },
+  "end":   { "lat": 31.76, "lng": 35.23 },
+  "units": 4,
+  "battery_capacity": 50000,
+  "batteries": [...]
+}
+```
+
+Full request/response specs are in the whitepapers linked above.
+
+---
+
 ## The Three Solvers
 
 **🔋 EV Route Planner** — plans a battery-aware route between any two points on the map. Given a battery range in meters, it finds the optimal path and snaps to charging stations along the way when needed, returning a full leg-by-leg breakdown with distances and charging stops.
@@ -31,7 +114,7 @@ A fleet intelligence and routing engine built entirely from scratch in C++. Load
 
 **Min-Cost Max-Flow** — battery constraints and robot capacity limits are modeled as flow capacities via node-splitting, transforming physical dispatch problems into graph optimization problems.
 
-**Swarm coordination** — multiple EVs routed simultaneously with global optimality guarantees across the shared road graph.
+**Swarm coordination** — multiple units routed simultaneously with global optimality guarantees across the shared road graph.
 
 ---
 
@@ -47,33 +130,14 @@ A fleet intelligence and routing engine built entirely from scratch in C++. Load
 | `FleetDispatcher.cpp/h` | Feature 2 — robot-to-vehicle assignment |
 | `SwarmController.cpp/h` | Feature 3 — multi-unit swarm routing |
 | `Utilities.cpp/h` | Shared helpers |
-| `main.cpp` | Entry point — loads the graph, reads JSON request, dispatches to the right solver |
+| `main.cpp` | Entry point — loads the graph, polls for `request.json`, dispatches to the right solver |
 | `index.html` | Browser frontend |
 
 ---
 
-## Input / Output
+## Makefile Targets
 
-All solvers communicate via JSON. Send a request, get a response. The `mode` field routes to the correct solver.
-
-```json
-{
-  "mode": "ev_route",
-  "start": { "lat": 32.08, "lng": 34.78 },
-  "end":   { "lat": 31.76, "lng": 35.23 },
-  "battery_meters": 80000,
-  "charging_stations": [{ "lat": 31.90, "lng": 35.00 }]
-}
-```
-
-Full API contracts and edge case handling are documented in the whitepapers.
-
----
-
-## Building
-
-```bash
-make
-```
-
-Requires g++ with C++17 and pthreads. No external dependencies beyond the bundled `json.hpp` (nlohmann) in `External Libraries/`.
+| Command | What it does |
+|---|---|
+| `make` | Build and launch the engine |
+| `make clean` | Remove compiled objects and binary |
