@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>B.A.S.E.L Engine - EV Navigator</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        #panel {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: white; padding: 20px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 340px;
+            max-height: 90vh; overflow-y: auto;
+        }
+        .mode-btn {
+            width: 100%; padding: 10px; margin-bottom: 8px; font-weight: bold;
+            background: #f8f9fa; color: #333; border: 2px solid #ddd;
+            border-radius: 5px; cursor: pointer; transition: 0.3s;
+        }
+        .mode-btn.active { background: #007bff; color: white; border-color: #0056b3; }
+        /* Permanent marker for touched batteries */
+        .battery-icon.used-pile {
+            filter: drop-shadow(0 0 15px rgba(255, 193, 7, 0.9));
+        }
+        @keyframes pulseRed {
+            0% { filter: drop-shadow(0 0 5px red); transform: scale(1); }
+            50% { filter: drop-shadow(0 0 25px red); transform: scale(1.3); }
+            100% { filter: drop-shadow(0 0 5px red); transform: scale(1); }
+        }
+        .battery-collision {
+            animation: pulseRed 1s infinite;
+            z-index: 9999 !important;
+        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .action-btn { padding: 10px; font-weight: bold; border: none; cursor: pointer; border-radius: 5px; color: white; width: 100%; transition: 0.2s;}
+
+        .btn-send { background: #28a745; grid-column: span 2; padding: 12px; font-size: 15px;}
+        .btn-send:hover { background: #218838; }
+        .btn-load { background: #17a2b8; grid-column: span 2; padding: 12px; font-size: 15px;}
+        .btn-load:hover { background: #138496; }
+        .btn-undo { background: #ffc107; color: #333; }
+        .btn-undo:hover { background: #e0a800; }
+        .btn-undo:disabled { background: #e9ecef; color: #6c757d; cursor: not-allowed; }
+        .btn-clear { background: #dc3545; }
+        .btn-clear:hover { background: #c82333; }
+        .btn-cancel { background: #6c757d; margin-top: 10px; width: 150px; }
+        .btn-cancel:hover { background: #5a6268; }
+        .f2-toggle-btn { opacity: 0.6; filter: grayscale(100%); }
+        .f2-toggle-btn.active { opacity: 1; filter: grayscale(0%); box-shadow: inset 0 0 5px rgba(0,0,0,0.3); }
+
+        #instructions { font-size: 14px; color: #555; margin-bottom: 10px; min-height: 45px;}
+
+        ul { list-style: none; padding: 0; margin: 0; max-height: 180px; overflow-y: auto; }
+        .data-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px; border-bottom: 1px solid #eee; }
+        .small-btn { border: none; border-radius: 4px; cursor: pointer; padding: 4px 8px; font-size: 11px; font-weight: bold; }
+        .btn-change { background: #17a2b8; color: white; }
+        .btn-delete { background: #ff4d4d; color: white; }
+
+        /* General Icons */
+        .basel-icon {
+            font-size: 25px;
+            filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+            z-index: 1000 !important;
+            text-align: center;
+        }        .start-icon { font-size: 25px; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4)); }
+        .end-icon { font-size: 25px; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4)); }
+
+        /* F1 Stations */
+        .ev-station {
+            font-weight: bold; font-size: 14px; border: 2px solid white; border-radius: 6px;
+            padding: 4px 8px; box-shadow: 0 3px 6px rgba(0,0,0,0.3); text-align: center; white-space: nowrap; transition: 0.3s;
+        }
+        .ev-station.used { background-color: #28a745; color: white; }
+        .ev-station.unused { background-color: #ffc107; color: #333; }
+        .ev-station.glowing { box-shadow: 0 0 20px 8px #007bff; background-color: #007bff; color: white; transform: scale(1.15); }
+
+        /* F2 Elements */
+        .basel-idle-icon { font-size: 25px; filter: drop-shadow(0 0 8px rgba(0, 123, 255, 0.9)); opacity: 0.8; text-align: center; }
+        .idle-label {
+            background: #007bff; color: white; padding: 2px 6px; border-radius: 4px;
+            font-size: 10px; font-weight: bold; position: absolute;
+            top: -18px; left: -10px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .f2-vehicle-badge {
+            background-color: #dc3545; color: white; font-weight: bold; font-size: 14px;
+            border: 2px solid white; border-radius: 50%; width: 22px; height: 22px;
+            display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+
+        .basel-idle-icon { font-size: 25px; filter: drop-shadow(0 0 8px rgba(0, 123, 255, 0.9)); opacity: 0.8; text-align: center; }
+        .idle-label {
+            background: #007bff; color: white; padding: 2px 6px; border-radius: 4px;
+            font-size: 10px; font-weight: bold; position: absolute;
+            top: -18px; left: -10px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* F3 Elements */
+        .battery-icon { font-size: 35px; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.5)); position: relative; text-align: center; transition: 0.3s; }
+        .battery-badge {
+            background-color: #333; color: #0f0; font-weight: bold; font-size: 14px;
+            border: 2px solid white; border-radius: 5px; padding: 2px 5px;
+            position: absolute; top: -10px; right: -15px; box-shadow: 0 2px 5px rgba(0,0,0,0.4); transition: 0.3s;
+        }
+        .battery-icon.glowing { filter: drop-shadow(0 0 25px #ffc107) scale(1.2); }
+
+        /* Refined F1 Distance Label */
+        .custom-div-icon { background: transparent !important; border: none !important; }
+        .dist-label { background: transparent; font-weight: 900; font-size: 15px; color: black; transform: translate(-50%, -50%); white-space: nowrap; text-shadow: 2px 2px 0px white, -2px -2px 0px white, 2px -2px 0px white, -2px 2px 0px white; }
+        /* F3 B.A.S.E.L Counter & Badges */
+        .basel-number-badge { background-color: #ffc107; color: #000; font-weight: bold; font-size: 12px; border: 2px solid white; border-radius: 50%; width: 18px; height: 18px; display: flex; justify-content: center; align-items: center; position: absolute; top: -10px; right: -5px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        #f3-live-counter { position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.9); padding: 10px 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: none; align-items: center; gap: 10px; font-weight: bold; font-size: 18px; border-left: 5px solid #6f42c1; }
+
+        /* Loading Screen */
+        #loading-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; display: none; flex-direction: column; justify-content: center; align-items: center; color: white; backdrop-filter: blur(5px); }
+        .loading-bar-container { width: 300px; height: 10px; background: #333; border-radius: 5px; margin: 20px 0; overflow: hidden; position: relative; }
+        .loading-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #6f42c1, #b83280); transition: width 0.1s linear; }
+        .loading-robot { font-size: 50px; margin-bottom: 10px; animation: bounce 1s infinite alternate; }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-15px); } }
+        @keyframes fixingDance {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(-3deg); }
+            75% { transform: rotate(3deg); }
+            100% { transform: rotate(0deg); }
+        }
+        .fixing-dance {
+            animation: fixingDance 0.8s infinite ease-in-out;
+            filter: drop-shadow(0 0 8px rgba(40, 167, 69, 0.6)) !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="panel">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h2 style="margin: 0; color: #333;">🤖 B.A.S.E.L Engine</h2>
+        <div style="display: flex; gap: 8px;">
+            <button onclick="openGuide()" title="How to Use" style="background: #6c757d; color: white; border: none; border-radius: 50%; width: 28px; height: 28px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">📖</button>
+            <button onclick="openTutorial()" title="Algorithm Info" style="background: #17a2b8; color: white; border: none; border-radius: 50%; width: 28px; height: 28px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">?</button>
+        </div>
+    </div>
+
+    <button id="btn-f1" class="mode-btn active" onclick="setMode('f1')">📍 F1: EV Navigator</button>
+    <button id="btn-f2" class="mode-btn" onclick="setMode('f2')">🚕 F2: Dispatcher</button>
+    <button id="btn-f3" class="mode-btn" onclick="setMode('f3')">🔋 F3: Treasure Swarm</button>
+
+    <div id="f1-settings" style="margin-bottom: 10px;">
+        <label style="font-size: 13px; font-weight: bold;">🔋 B.A.S.E.L. Unit Battery Capacity (km):</label>
+        <input type="number" id="battery-input" step="any" value="150" style="width: 100%; padding: 5px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+    </div>
+
+    <div id="f2-settings" style="display: none; margin-bottom: 10px;">
+        <div class="grid-2" style="margin-top: 0; margin-bottom: 10px;">
+            <button id="f2-btn-robot" class="action-btn f2-toggle-btn active" style="background: #28a745;" onclick="setF2Action('robot')">🤖 Deploy Robot</button>
+            <button id="f2-btn-vehicle" class="action-btn f2-toggle-btn" style="background: #dc3545;" onclick="setF2Action('vehicle')">🚗 Add Vehicle</button>
+        </div>
+
+        <div id="f2-vehicle-options" style="display: none;">
+            <label style="font-size: 13px; font-weight: bold;">Vehicle Category:</label>
+            <select id="vehicle-type-select" style="width: 100%; padding: 6px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;">
+                <option value="two-wheeler">🚲 Two-wheeler (1 Robot)</option>
+                <option value="passengers-car">🚙 Passenger car (2 Robots)</option>
+                <option value="heavy-transport">🚚 Heavy transport (3 Robots)</option>
+                <option value="complex-vehicle">🚒 Emergency / Complex (4 Robots)</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="f3-settings" style="display: none; margin-bottom: 10px;">
+        <label style="font-size: 13px; font-weight: bold;">🔋Battery Capacity (km):</label>
+        <input type="number" id="f3-capacity-input" step="any" value="150" style="width: 100%; padding: 5px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+        <p style="font-size: 11px; color: #666; margin-top: 8px;"><i>*Click a battery on the map to change its stack size (+/-)</i></p>
+    </div>
+
+    <hr>
+    <p id="instructions">Click map to set <b>Start</b>, <b>End</b>, and <b>Stations</b>.</p>
+
+    <ul id="data-list"></ul>
+
+    <div class="grid-2">
+        <button id="btn-undo" class="action-btn btn-undo" onclick="undoAction()" disabled>↩️ Undo</button>
+        <button class="action-btn btn-clear" onclick="clearCurrentMap()">🗑️ Clear</button>
+
+        <div id="timeline-container" style="grid-column: span 2; display: none; text-align: center; margin-top: 5px; margin-bottom: 5px;">
+            <label style="font-size: 12px; font-weight: bold; color: #555;">⏱️ Time Travel Scrubber</label>
+            <input type="range" id="anim-timeline" min="0" max="100" value="0" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <button id="btn-pause" class="action-btn" style="background: #ffc107; color: #000; grid-column: span 2; display: none;" onclick="togglePause()">⏸️ Pause Swarm</button>
+        <button id="btn-restart" class="action-btn" style="background: #6f42c1; color: white; grid-column: span 2; display: none;" onclick="if(window.restartAnimation) window.restartAnimation()">🔄 Restart Animation</button>
+        <button class="action-btn btn-send" onclick="downloadRequestJSON()">📥 1. Download Request</button>
+        <input type="file" id="response-file" style="display:none;" onchange="loadResponse(event)" accept=".json">
+        <button class="action-btn btn-load" onclick="document.getElementById('response-file').click()">📤 2. Load C++ Route</button>
+    </div>
+    <div style="text-align: center; margin-top: 15px; font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">
+        Engineered by Basel Shokha
+    </div>
+</div>
+<div id="map"></div>
+
+<button id="map-measure-btn" onclick="toggleMeasureMode()" style="position: absolute; bottom: 30px; left: 20px; z-index: 1000; padding: 10px 15px; border-radius: 8px; border: 2px solid #ccc; background: white; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.2s; color: #333;">📏 Measure Tool</button>
+<div id="f1-info-window" style="position: absolute; bottom: 85px; left: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.9); padding: 10px 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: none; align-items: center; gap: 10px; font-weight: bold; font-size: 18px; border-left: 5px solid #007bff;">
+    <span id="f1-info-icon" style="font-size: 30px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));">📍</span>
+    <div>
+        <div id="f1-info-title" style="font-size: 12px; color: #555; text-transform: uppercase;">Total Distance</div>
+        <div id="f1-info-val" style="color: #007bff; font-size: 22px;">0.00 km</div>
+    </div>
+</div>
+<div id="f2-distance-counter" style="position: absolute; bottom: 85px; left: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.9); padding: 10px 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: none; align-items: center; gap: 10px; font-weight: bold; font-size: 18px; border-left: 5px solid #28a745;">
+    <span style="font-size: 30px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));">📏</span>
+    <div>
+        <div style="font-size: 12px; color: #555; text-transform: uppercase;">Total Distance</div>
+        <div id="f2-dist-val" style="color: #28a745; font-size: 22px;">0.00 km</div>
+    </div>
+</div>
+<div id="f3-live-counter" style="position: absolute; bottom: 85px; left: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.9); padding: 10px 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: none; align-items: center; gap: 10px; font-weight: bold; font-size: 18px; border-left: 5px solid #6f42c1;">
+    <span style="font-size: 30px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));">🤖</span>
+    <div>
+        <div style="font-size: 12px; color: #555; text-transform: uppercase;">B.A.S.E.L units Count</div>
+        <div id="f3-count-val" style="color: #6f42c1; font-size: 22px;">0</div>
+    </div>
+</div>
+
+<div id="loading-overlay">
+    <div style="font-size: 50px; margin-bottom: 10px; animation: bounce 1s infinite alternate;">👾</div>
+    <h2 id="loading-status-text" style="margin:0;">Calculating Routes...</h2>
+    <div class="loading-bar-container">
+        <div id="loading-bar" class="loading-bar-fill"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; width:300px; font-size:14px; color:#aaa;">
+        <span id="loading-time">Est: 0.0s</span><span id="loading-pct">0%</span>
+    </div>
+    <button class="action-btn btn-cancel" onclick="cancelLoading()">🛑 Cancel & Edit</button>
+</div>
+
+<style>
+    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-15px); } }
+    .basel-number-badge { background-color: #ffc107; color: #000; font-weight: bold; font-size: 12px; border: 2px solid white; border-radius: 50%; width: 18px; height: 18px; display: flex; justify-content: center; align-items: center; position: absolute; top: -10px; right: -5px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+</style>
+<div id="tutorial-modal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; display: none; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: white; padding: 30px; border-radius: 12px; width: 500px; max-width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative;">
+        <button onclick="document.getElementById('tutorial-modal').style.display='none'" style="position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 20px; cursor: pointer; color: #888;">✖</button>
+        <h2 id="tut-title" style="margin-top: 0; color: #007bff;">Title</h2>
+        <div id="tut-body" style="font-size: 15px; color: #444; line-height: 1.6;">Body text</div>
+        <div style="margin-top: 20px; text-align: right;">
+            <button onclick="document.getElementById('tutorial-modal').style.display='none'" style="background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">Got it!</button>
+        </div>
+    </div>
+</div>
+<script>
+    // 1. MAP SETUP
+    var bounds = [[29.0, 33.5], [33.8, 36.5]];
+    var map = L.map('map', { maxBounds: bounds, maxBoundsViscosity: 0.8, minZoom: 7, preferCanvas: true }).setView([32.50, 35.00], 8);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+
+    var markersLayer = L.layerGroup().addTo(map);
+    var routeLayer = L.featureGroup().addTo(map);
+
+    var rawGeoJsonCoords = [
+        [35.871792446044736, 33.4199217495276], [35.866415203410924, 33.41578843822198], [35.853754781003715, 33.413583113625876], [35.84354537018916, 33.407170194165644],
+        [35.82406952801685, 33.391824013739225], [35.8206547441263, 33.38183678906813], [35.818354659881436, 33.37015496768478], [35.817644229629394, 33.355716577719406],
+        [35.804961391576626, 33.33875747951738], [35.77453464676097, 33.33089591616134], [35.75038743381478, 33.32098036991992], [35.73147573588935, 33.31391823014337],
+        [35.72520216288703, 33.32666749509475], [35.71843895482047, 33.321074634122624], [35.71653546055032, 33.31132221704108], [35.70564203808976, 33.29870827887312],
+        [35.68706810039842, 33.28906798218782], [35.673384803529245, 33.286660016074634], [35.658341102363494, 33.272015530222575], [35.64743331651451, 33.27580242910152],
+        [35.62991939637064, 33.27260905696323], [35.62395746676975, 33.263217010350985], [35.627785455094, 33.23962078739122], [35.617332838980644, 33.24155649208856],
+        [35.59128169048182, 33.256616318375094], [35.5796346250369, 33.272321046410866], [35.577620997770424, 33.280209849930316], [35.568949864904255, 33.28433915279726],
+        [35.55737344817564, 33.26180177639348], [35.548145376966744, 33.2346704156908], [35.54384162126536, 33.21491193589709], [35.54401659245357, 33.19337061610338],
+        [35.535287795452945, 33.142102981087476], [35.53431290620628, 33.12862477248605], [35.525872083466, 33.11378932965256], [35.508385038591655, 33.11251508462672],
+        [35.50703947581741, 33.10279121584567], [35.502274966000385, 33.08673178367458], [35.48308892390685, 33.09020326383899], [35.452933956611645, 33.089761456538724],
+        [35.43133855924694, 33.06558497730802], [35.39035993261243, 33.05807940915555], [35.377933303711984, 33.0533027688074], [35.35181853012517, 33.05801295698761],
+        [35.321348708643626, 33.08847260352128], [35.300985586363566, 33.103097670859796], [35.23043342472005, 33.0929188447992], [35.21203737414109, 33.086451858432795],
+        [35.1921957528873, 33.08542131332645], [35.1560014784136, 33.08903635015625], [35.10661675087374, 33.09415349743874], [35.100981305449665, 33.04033809352774],
+        [35.083614366081065, 32.99308559383961], [35.0722616812009, 32.937483494950314], [35.06647157988462, 32.92175889937246], [35.08608646260407, 32.916420761845345],
+        [35.08134042357395, 32.89960819550001], [35.05778115878343, 32.83799924020276], [35.032013913088974, 32.81732678550861], [35.04054149040218, 32.79909632246401],
+        [35.02365105523177, 32.802344035607604], [35.00297276952202, 32.811239240845836], [34.97697179437097, 32.832650838035136], [34.95561622959872, 32.821013426135906],
+        [34.96033093429779, 32.77089676218948], [34.93431809727085, 32.690163784351256], [34.87747686733388, 32.438704028363816], [34.800993455777956, 32.160730410333755],
+        [34.685878329147414, 31.900290882384468], [34.5628811692757, 31.688417298897704], [34.41879024873788, 31.50053585262043], [34.219296524712746, 31.320746862703174],
+        [34.24020923477508, 31.29545043260694], [34.26848904594797, 31.222231574763597], [34.40618467877721, 30.847496465527342], [34.49927950895042, 30.685232860389988],
+        [34.517978107803486, 30.602562314136705], [34.5186686991984, 30.560926428263087], [34.52047769902498, 30.535921002789863], [34.55801212558714, 30.49466251171647],
+        [34.55154512301533, 30.466078775375266], [34.53715087623016, 30.438629101504432], [34.5417520989171, 30.42641591997723], [34.53935468662792, 30.411619187941355],
+        [34.613582494356194, 30.373204125101637], [34.65480807706231, 30.249944856416064], [34.77466497549295, 29.945671268447754], [34.851278428848644, 29.76221641526071],
+        [34.85945676703503, 29.693466915042634], [34.88212263582611, 29.650488353981217], [34.87012615301353, 29.6008082040332], [34.87571122192736, 29.586689267157055],
+        [34.887829792786334, 29.535269263451028], [34.904893213330666, 29.49171799824333], [34.95435233710242, 29.5510383304147], [34.97784039745099, 29.542121007410472],
+        [34.97574847970054, 29.57499178819741], [34.99195710374099, 29.60798061707702], [35.01404732791153, 29.63874376948364], [35.01095269345279, 29.699889516805],
+        [35.04011033286906, 29.78333907856151], [35.073478367481755, 29.869135719141156], [35.07854909117927, 29.930971634846287], [35.077777369911814, 29.95528427780043],
+        [35.08768488575316, 29.973532003387817], [35.10757811144646, 29.992903329895313], [35.09907543226325, 30.01175033750836], [35.10924134736308, 30.034727702512726],
+        [35.13581376673011, 30.06212181342285], [35.14995528526012, 30.09044231376393], [35.15851089037233, 30.128888868744554], [35.15367110358838, 30.145060112216697],
+        [35.143942758081806, 30.16554956875082], [35.1487023614618, 30.21900501134526], [35.149031021098864, 30.253886120970023], [35.143139007013104, 30.28626968282248],
+        [35.15245478692023, 30.3053495901391], [35.190662613057015, 30.346640281634066], [35.16140092235935, 30.41135867178444], [35.16224219130879, 30.441330847088025],
+        [35.19550244062438, 30.534384617328072], [35.20327308014919, 30.58155633697193], [35.229540293401556, 30.62763425839252], [35.25552724335847, 30.65077905890884],
+        [35.27754450186316, 30.704507942427924], [35.28905778427736, 30.724946713407306], [35.29896145098746, 30.760762610878203], [35.320131176009596, 30.794120839555646],
+        [35.340095125840236, 30.80832117709494], [35.33114348946532, 30.836027241890278], [35.33751466517796, 30.879543183945074], [35.37202144853953, 30.92572746953168],
+        [35.391515830381366, 30.93263856212424], [35.40840470574315, 30.946883552181063], [35.418326205872916, 30.967643856459517], [35.36298218948971, 30.961188318239508],
+        [35.35568399389848, 30.972121352065315], [35.34861867487422, 30.99098155324313], [35.349362358063786, 31.011943358731685], [35.36589818629116, 31.036497223281927],
+        [35.38534928060969, 31.052493538015028], [35.38960767590089, 31.08055567019568], [35.38381011050504, 31.115225167183056], [35.36939998792607, 31.139089429508047],
+        [35.36586540673798, 31.165763501908515], [35.35577497778726, 31.235777981768138], [35.39471399948687, 31.245545062813335], [35.40320965573193, 31.27179707064994],
+        [35.42421373017038, 31.32633358656659], [35.41173871116601, 31.360348975380518], [35.40677767186477, 31.382776343789246], [35.39127255646065, 31.42591172825692],
+        [35.39459585489729, 31.452328914276336], [35.3976144641685, 31.49092143353755], [35.400911882133954, 31.54429108786472], [35.4113582034129, 31.56739972209232],
+        [35.41200410820559, 31.600479457934327], [35.429818254989215, 31.640599601687555], [35.443973041625014, 31.66837293619372], [35.45064441538429, 31.695461526488387],
+        [35.47762180921373, 31.71737726255064], [35.49627643427283, 31.730533484791295], [35.50303286670234, 31.76342092116178], [35.52734125816198, 31.763417519680246],
+        [35.54871978944027, 31.751304794683648], [35.54911434119259, 31.782407749560107], [35.542887238898174, 31.809674800801062], [35.54199547526508, 31.825004428046427],
+        [35.54127915625037, 31.86036779932263], [35.531399403941805, 31.88830696380407], [35.52766526249965, 31.91472167920513], [35.53471730861787, 31.925694853508332],
+        [35.54502878560962, 31.962384585609158], [35.534040538369766, 31.987410263924474], [35.52718818093848, 32.002245358607425], [35.519417236614345, 32.02656289721533],
+        [35.52057376572992, 32.04864474258629], [35.54034303172949, 32.078030226507124], [35.53292931658709, 32.09690757842483], [35.55110186399892, 32.141465035369606],
+        [35.55056371150155, 32.16137117538756], [35.55627848488086, 32.174677112133054], [35.56304376840771, 32.1868988125491], [35.56427370210184, 32.205810892972465],
+        [35.56395203201782, 32.23664276452284], [35.557396804082686, 32.272014421003334], [35.55929907052405, 32.299981966777665], [35.55296546525429, 32.32449223356596],
+        [35.56209670607785, 32.362783688979604], [35.55167666133869, 32.3942469795749], [35.55690521033637, 32.42899746066462], [35.56583731079451, 32.44487588856538],
+        [35.56464693558496, 32.467231036674036], [35.576562288618476, 32.48618693135646], [35.55799341051551, 32.50467440134646], [35.55537834959233, 32.51773219314073],
+        [35.55930551013452, 32.54101999626529], [35.56898730373149, 32.54795752007725], [35.57551801148378, 32.57299745382508], [35.57788734309685, 32.59339712932014],
+        [35.56572548266715, 32.60435926688166], [35.56116191434907, 32.62964949764836], [35.564158538387034, 32.648155233144564], [35.593221468020886, 32.65509962298755],
+        [35.612698081806656, 32.67011190910932], [35.698906699095346, 32.71203228081008], [35.756183712690245, 32.74531874127497], [35.82863525081669, 32.808951477565884],
+        [35.85761688389795, 32.87587700112395], [35.91499935178575, 32.95086019568856], [35.916019301488205, 32.97105957754097], [35.87648924228182, 32.99606757954763],
+        [35.86767603399525, 33.061459024218195], [35.87135783217539, 33.107052830716555], [35.903817325123214, 33.10933116222921], [35.902778949505574, 33.11331803916252],
+        [35.89355925547051, 33.11998552760811], [35.90093214917445, 33.12758697623566], [35.914325499508266, 33.13836119698428], [35.91927506164683, 33.152799310357096],
+        [35.910628632051214, 33.16685923674511], [35.898155274505655, 33.181279939665615], [35.88574138060966, 33.18111144833176], [35.89338731048545, 33.192418371089204],
+        [35.879467837549385, 33.211551242821955], [35.857602675835494, 33.26838750209063], [35.83844482554221, 33.27873745093572], [35.82492567331343, 33.282117138501974],
+        [35.84423602803153, 33.29521895073556], [35.84739494806013, 33.30957713836479], [35.84261197566613, 33.33244476203714], [35.83354508697383, 33.35487027358147],
+        [35.83932011966672, 33.37841092913264], [35.86214257398615, 33.39607271998824], [35.8720928554215, 33.40903565808871], [35.871792446044736, 33.4199217495276]
+    ];
+
+    var leafletCoords = rawGeoJsonCoords.map(function(coord) { return [coord[1], coord[0]]; });
+    var allowedArea = L.polygon(leafletCoords);
+
+    function isInside(lat, lng, polygon) {
+        var x = parseFloat(lat), y = parseFloat(lng);
+        var poly = polygon.getLatLngs()[0];
+        var inside = false;
+        for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            var xi = poly[i].lat, yi = poly[i].lng;
+            var xj = poly[j].lat, yj = poly[j].lng;
+            var intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    // =========================================================================
+    // 🟢 DATA STATE & UI CORE
+    // =========================================================================
+    var currentMode = 'f1';
+    var appData = {
+        f1: { start: null, end: null, stations: [] },
+        f2: { clickAction: 'robot', fixer_robots: [], broken_vehicles: [], nextRobotId: 1, nextVehicleId: 1 },
+        f3: { start: null, end: null, batteries: [] }
+    };
+    var historyStack = [];
+    window.currentAnimId = null;
+
+    function openTutorial(isWelcome = false) {
+        let title = ""; let body = "";
+
+        if (isWelcome) {
+            title = "🚀 Welcome to B.A.S.E.L Engine";
+            body = "<b>B.A.S.E.L.</b> stands for <i>Bot for Autonomous Search and Efficient Logistics</i>.<br><br>" +
+                "This engine is a high-performance algorithmic suite designed to solve complex logistics, routing, and fleet synchronization challenges using real-world map data.<br><br>" +
+                "Click <b>'📖'</b> for a usage guide, or <b>'?'</b> to see the <b>Engineering Goal</b> and the algorithms powering the engine.";
+        } else if (currentMode === 'f1') {
+            title = "🔬 F1: Technical Logic";
+            body = "<b>The Goal:</b> Navigate a vehicle across the map while ensuring it never reaches zero charge by strategically selecting charging stops.<br><br>" +
+                "<b>Under the Hood:</b> The engine constructs a <i>Condensed Graph</i> of charging stations. It utilizes <b>Dijkstra's Algorithm</b> to compute the absolute lightest path where no single leg exceeds the battery constraint. If the destination is unreachable, the engine instantly identifies the bottleneck.";
+        } else if (currentMode === 'f2') {
+            title = "🔬 F2: Technical Logic";
+            body = "<b>The Goal:</b> Synchronize a swarm of repair units to reach multiple broken-down vehicles simultaneously, minimizing total system travel time.<br><br>" +
+                "<b>Under the Hood:</b> Each vehicle category requires a specific number of synchronized units. The engine models the map as a flow network and utilizes an advanced <b>Min-Cost Max-Flow Algorithm</b> (which I researched and implemented from scratch :) ) to find the mathematically optimal assignments.";
+        } else if (currentMode === 'f3') {
+            title = "🔬 F3: Technical Logic";
+            body = "<b>The Goal:</b> Maximize the throughput of units from Start to End by managing limited, scattered battery resources while strictly adhering to individual unit battery constraints (e.g., a unit cannot reach a resource beyond its current range).<br><br>" +
+                "<b>Under the Hood:</b> This is an advanced <b>Network Flow</b> problem. The engine models the map using a node-splitting technique to enforce strict <b>Capacities on Nodes</b> based on available battery piles. It then utilizes the <b>Edmonds-Karp Algorithm</b> to compute the maximum possible flow of units through the resource-constrained environment.";
+        }
+
+        document.getElementById('tut-title').innerText = title;
+        document.getElementById('tut-body').innerHTML = body;
+        document.getElementById('tutorial-modal').style.display = 'flex';
+    }
+
+    function openGuide() {
+        let title = "📖 How to Use"; let body = "";
+
+        if (currentMode === 'f1') {
+            body = "1. Click the map to set a <b>Start</b> and <b>End</b> point.<br>" +
+                "2. Click again to scatter <b>Charging Stations</b> <i>(Space them out! Placing them too close may cause a collision)</i>.<br>" +
+                "3. Click <b>'📥 1. Download Request'</b>, run the C++ engine, and load the <b>response.json</b>.";
+        } else if (currentMode === 'f2') {
+            body = "1. Use the toggle buttons to place standby <b>Robots</b> on the map.<br>" +
+                "2. Switch to <b>Add Vehicle</b>, pick a category, and drop them on the map.<br>" +
+                "3. Click <b>'📥 1. Download Request'</b> to calculate the optimal swarm dispatch.";
+        } else if (currentMode === 'f3') {
+            body = "1. Click the map to set a <b>Start</b> and <b>End</b> point.<br>" +
+                "2. Click to scatter <b>Battery Piles</b> <i>(Click an already placed battery to increase its stack size!)</i>.<br>" +
+                "3. Click <b>'📥 1. Download Request'</b> to find the maximum possible throughput.";
+        }
+
+        document.getElementById('tut-title').innerText = title;
+        document.getElementById('tut-body').innerHTML = `<div style='background:#f8f9fa; padding:15px; border-left:4px solid #6c757d; border-radius:4px; line-height:1.8;'>${body}</div>`;
+        document.getElementById('tutorial-modal').style.display = 'flex';
+    }
+
+    // SESSION VISITOR CHECK (Shows every time they open a new tab)
+    window.addEventListener('DOMContentLoaded', (event) => {
+        if (!sessionStorage.getItem('basel_session_active')) {
+            setTimeout(() => openTutorial(true), 500);
+            sessionStorage.setItem('basel_session_active', 'true');
+        }
+    });
+
+    function saveState() { historyStack.push(JSON.stringify(appData[currentMode])); document.getElementById('btn-undo').disabled = false; }    function undoAction() { if (historyStack.length === 0) return; appData[currentMode] = JSON.parse(historyStack.pop()); if (historyStack.length === 0) document.getElementById('btn-undo').disabled = true; renderAll(); }
+    function removePoint(pointType) { saveState(); appData[currentMode][pointType] = null; renderAll(); }
+    function removeArrayItem(arrayName, index) { saveState(); appData[currentMode][arrayName].splice(index, 1); renderAll(); }
+
+    function clearCurrentMap(skipConfirm = false) {
+        if (!skipConfirm && !confirm("Clear all points and routes?")) return;
+        saveState();
+        if (currentMode === 'f1') appData.f1 = { start: null, end: null, stations: [] };
+        if (currentMode === 'f2') appData.f2 = { clickAction: appData.f2.clickAction, fixer_robots: [], broken_vehicles: [], nextRobotId: 1, nextVehicleId: 1 };
+        if (currentMode === 'f3') appData.f3 = { start: null, end: null, batteries: [] };
+        routeLayer.clearLayers();
+        if (window.currentAnimId) cancelAnimationFrame(window.currentAnimId);
+
+        let f1Window = document.getElementById('f1-info-window');
+        if (f1Window) f1Window.style.display = 'none';
+        document.getElementById('f3-live-counter').style.display = 'none';
+        document.getElementById('f2-distance-counter').style.display = 'none';
+        let pauseBtn = document.getElementById('btn-pause');
+
+        let restartBtn = document.getElementById('btn-restart');
+        if(pauseBtn) pauseBtn.style.display = 'none';
+        if(restartBtn) restartBtn.style.display = 'none';
+
+        renderAll();
+    }
+
+    function setMode(mode) {
+        if (mode === currentMode) return;
+        clearCurrentMap(true);
+        currentMode = mode;
+        historyStack = [];
+        let f1Window = document.getElementById('f1-info-window');
+        let f3Counter = document.getElementById('f3-live-counter');
+        let f2Counter = document.getElementById('f2-distance-counter');
+        if (f1Window) f1Window.style.display = 'none';
+        if (f3Counter) f3Counter.style.display = 'none';
+        if (f2Counter) f2Counter.style.display = 'none';
+        document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('btn-' + mode).classList.add('active');
+
+        document.getElementById('f1-settings').style.display = (mode === 'f1') ? 'block' : 'none';
+        document.getElementById('f2-settings').style.display = (mode === 'f2') ? 'block' : 'none';
+        document.getElementById('f3-settings').style.display = (mode === 'f3') ? 'block' : 'none';
+
+        var inst = document.getElementById('instructions');
+        if (mode === 'f1') inst.innerHTML = "Click 1: <b>Start</b> 🏁<br>Click 2: <b>End</b> 🛑<br>Clicks 3+: <b>Charging Stations</b> 🔌";
+        else if (mode === 'f2') inst.innerHTML = "Place <b>Fixer Robots</b> and <b>Broken Vehicles</b> on the map.";
+        else if (mode === 'f3') inst.innerHTML = "Click 1: <b>Start</b> 🏁<br>Click 2: <b>End</b> 🛑<br>Clicks 3+: <b>Battery Chests 🔋</b>";
+
+        renderAll();
+    }
+
+    function setF2Action(action) {
+        appData.f2.clickAction = action;
+        document.getElementById('f2-btn-robot').classList.remove('active');
+        document.getElementById('f2-btn-vehicle').classList.remove('active');
+        document.getElementById('f2-btn-' + action).classList.add('active');
+        document.getElementById('f2-vehicle-options').style.display = (action === 'vehicle') ? 'block' : 'none';
+    }
+
+    map.on('click', function(e) {
+        if (window.isMeasuring) return; // 🛑 BLOCK SPAWNING WHILE MEASURING
+
+        var lat = parseFloat(e.latlng.lat.toFixed(5));
+        var lng = parseFloat(e.latlng.lng.toFixed(5));
+
+        if (!isInside(lat, lng, allowedArea)) { alert("❌ OUT OF BOUNDS!\nSelected point is outside the supported area."); return; }
+        saveState();
+
+        if (currentMode === 'f1') {
+            if (!appData.f1.start) appData.f1.start = {lat: lat, lng: lng};
+            else if (!appData.f1.end) appData.f1.end = {lat: lat, lng: lng};
+            else appData.f1.stations.push({lat: lat, lng: lng});
+        }
+        else if (currentMode === 'f2') {
+            if (appData.f2.clickAction === 'robot') {
+                appData.f2.fixer_robots.push({id: appData.f2.nextRobotId++, lat: lat, lng: lng});
+            } else {
+                let vType = document.getElementById('vehicle-type-select').value;
+                let requnits = 1;
+                if(vType === 'passengers-car') requnits = 2;
+                if(vType === 'heavy-transport') requnits = 3;
+                if(vType === 'complex-vehicle') requnits = 4;
+
+                appData.f2.broken_vehicles.push({ id: appData.f2.nextVehicleId++, type: vType, req: requnits, lat: lat, lng: lng });
+            }
+        }
+        else if (currentMode === 'f3') {
+            if (!appData.f3.start) appData.f3.start = {lat: lat, lng: lng};
+            else if (!appData.f3.end) appData.f3.end = {lat: lat, lng: lng};
+            else {
+                // DROP A BATTERY WITH DEFAULT COUNT OF 1
+                appData.f3.batteries.push({lat: lat, lng: lng, count: 1});
+            }
+        }
+        renderAll();
+    });
+
+    // 🟢 CUSTOM HELPER: Modify addUI to support custom popups and dragging
+    function addUI(lat, lng, label, type, isPoint, index = 0, iconHtml = null, customPopup = null) {
+        let markerOpt = iconHtml ? {icon: L.divIcon({html: iconHtml, className: ''}), draggable: true} : {draggable: true};
+
+        let defaultPopup = `
+            <div style="text-align:center;">
+                <b>${label}</b><br><br>
+                <button class="small-btn btn-delete" style="width:100%; padding:6px;" onclick="${isPoint ? `removePoint('${type}')` : `removeArrayItem('${type}', ${index})`}">❌ Remove</button>
+            </div>
+        `;
+
+        let m = L.marker([lat, lng], markerOpt).addTo(markersLayer).bindPopup(customPopup || defaultPopup, { autoPan: false });
+
+        m.on('dragstart', function() { saveState(); }); // Save state before dragging for undo
+        m.on('dragend', function(e) {
+            let pos = e.target.getLatLng();
+            let lat = parseFloat(pos.lat.toFixed(5));
+            let lng = parseFloat(pos.lng.toFixed(5));
+
+            // 🟢 BOUNDARY CHECK: If dropped outside, snap back
+            if (!isInside(lat, lng, allowedArea)) {
+                alert("❌ ILLEGAL MOVE!\nYou cannot drag items outside of the supported area.");
+                renderAll(); // Redraws everything at their last saved positions
+                return;
+            }
+
+            // If inside, update the data state
+            if (isPoint) {
+                appData[currentMode][type] = {lat: lat, lng: lng};
+            } else {
+                appData[currentMode][type][index].lat = lat;
+                appData[currentMode][type][index].lng = lng;
+            }
+            renderAll();
+        });
+
+
+        let btnHtml = isPoint ? `<button class="small-btn btn-change" onclick="removePoint('${type}')">✏️</button>` : `<button class="small-btn btn-delete" onclick="removeArrayItem('${type}', ${index})">❌</button>`;
+        list.innerHTML += `<li class="data-item"><span>${label}</span> ${btnHtml}</li>`;
+    }
+
+    function renderAll() {
+        markersLayer.clearLayers();
+        window.list = document.getElementById('data-list');
+        list.innerHTML = "";
+        let d = appData[currentMode];
+
+        if (currentMode === 'f1') {
+            // 🟢 Restored from old index!
+            let sIcon = `<div style="font-size: 28px; filter: drop-shadow(0 0 3px white); margin-top: -10px;">🏁</div>`;
+            let eIcon = `<div style="font-size: 28px; filter: drop-shadow(0 0 3px white); margin-top: -10px;">🛑</div>`;
+            let stIcon = `<div class="ev-station unused" style="font-size: 11px; padding: 4px 8px; border-width: 2px;">🔌 STATION</div>`;
+
+            if(d.start) addUI(d.start.lat, d.start.lng, "🏁 Start", 'start', true, 0, sIcon);
+            if(d.end) addUI(d.end.lat, d.end.lng, "🛑 End", 'end', true, 0, eIcon);
+            d.stations.forEach((s, i) => addUI(s.lat, s.lng, `🔌 Station ${i+1}`, 'stations', false, i, stIcon));
+        }
+        if (currentMode === 'f2') {
+            d.fixer_robots.forEach((r, i) => addUI(r.lat, r.lng, `🤖 Robot ${r.id}`, 'fixer_robots', false, i, `<div style="font-size:25px;">🤖</div>`));
+            d.broken_vehicles.forEach((v, i) => {
+                let emoji = "🚗"; let preSize = 25;
+                if (v.type === 'two-wheeler') { emoji = "🚲"; preSize = 20; }
+                else if (v.type === 'passengers-car') { emoji = "🚙"; preSize = 25; }
+                else if (v.type === 'heavy-transport') { emoji = "🚚"; preSize = 30; }
+                else if (v.type === 'complex-vehicle') { emoji = "🚒"; preSize = 35; }
+                let badge = `<div class="f2-vehicle-badge" style="position:absolute; top:-10px; right:-10px;">${v.req}</div>`;
+                addUI(v.lat, v.lng, `${emoji} Target ${v.id} (${v.type})`, 'broken_vehicles', false, i, `<div style="font-size:${preSize}px; text-align:center; position:relative;">${emoji}${badge}</div>`);
+            });
+        }
+
+        if (currentMode === 'f3') {
+            if(d.start) addUI(d.start.lat, d.start.lng, "Start", 'start', true, 0);
+            if(d.end) addUI(d.end.lat, d.end.lng, "End", 'end', true, 0);
+            d.batteries.forEach((c, i) => {
+                let html = `<div class="battery-icon" id="f3-bat-ui-${i}">🔋<div class="battery-badge" id="f3-badge-ui-${i}">${c.count}</div></div>`;
+
+                // 🟢 THE NEW INTERACTIVE POPUP MENU
+                let popupHtml = `
+                    <div style="text-align:center; min-width: 120px;">
+                        <b style="font-size: 14px;">Battery Pile ${i+1}</b><br>
+                        <div style="margin: 8px 0; font-size: 16px;">
+                            Count: <b id="f3-popup-count-${i}" style="color:#28a745;">${c.count}</b>
+                        </div>
+                        <div style="display:flex; justify-content:center; gap:5px; margin-bottom: 8px;">
+                            <button class="action-btn btn-delete" style="padding:4px 10px; width:40px;" onclick="changeBatteryCount(${i}, -1)">➖</button>
+                            <button class="action-btn btn-change" style="padding:4px 10px; width:40px;" onclick="changeBatteryCount(${i}, 1)">➕</button>
+                        </div>
+                        <button class="small-btn btn-delete" style="width:100%;" onclick="removeArrayItem('batteries', ${i})">❌ Remove Pile</button>
+                    </div>
+                `;
+
+                let listLabel = `🔋 Battery Pile ${i+1} (x<span id="f3-list-count-${i}">${c.count}</span>)`;
+                addUI(c.lat, c.lng, listLabel, 'batteries', false, i, html, popupHtml);
+            });
+        }
+        document.getElementById('btn-undo').disabled = (historyStack.length === 0);
+    }
+
+    // 🟢 DYNAMIC BATTERY COUNTER ENGINE
+    window.changeBatteryCount = function(index, delta) {
+        if (!appData.f3.batteries[index]) return;
+        let newVal = Math.max(1, appData.f3.batteries[index].count + delta); // Never go below 1
+        appData.f3.batteries[index].count = newVal;
+
+        // Instantly update the UI without reloading the map!
+        let mapBadge = document.getElementById(`f3-badge-ui-${index}`);
+        let popupText = document.getElementById(`f3-popup-count-${index}`);
+        let listText = document.getElementById(`f3-list-count-${index}`);
+
+        if (mapBadge) mapBadge.innerText = newVal;
+        if (popupText) popupText.innerText = newVal;
+        if (listText) listText.innerText = newVal;
+
+        saveState(); // Save to undo history silently
+    };
+
+    // =========================================================================
+    window.loadingAnimationFrame = null;
+
+    function cancelLoading() {
+        if (window.loadingAnimationFrame) cancelAnimationFrame(window.loadingAnimationFrame);
+        document.getElementById('loading-overlay').style.display = 'none';
+    }
+
+    function downloadRequestJSON() {
+        let payload = {};
+        let totalSimulatedTimeMs = 0;
+
+        if (currentMode === 'f1') {
+            if (!appData.f1.start || !appData.f1.end) { alert("❌ Set Start and End points!"); return; }
+            totalSimulatedTimeMs = 11500 + (appData.f1.stations.length * 4315);
+            payload = { mode: "f1", battery_capacity_km: (val => isNaN(val) ? 150.0 : val)(parseFloat(document.getElementById('battery-input').value)), start: appData.f1.start, end: appData.f1.end, stations: appData.f1.stations };
+        }
+        else if (currentMode === 'f2') {
+            if (appData.f2.broken_vehicles.length === 0) { alert("❌ Add at least one vehicle!"); return; }
+            let totalRequired = appData.f2.broken_vehicles.reduce((sum, v) => sum + v.req, 0);
+            let totalAvailable = appData.f2.fixer_robots.length;
+            if (totalAvailable < totalRequired) {
+                alert(`⚠️ INSUFFICIENT ROBOTS!\n\nYou have deployed ${totalAvailable} robot(s), but the vehicles require a total of ${totalRequired} robot(s).`);
+                return;
+            }
+            totalSimulatedTimeMs = 5500 + (appData.f2.fixer_robots.length * 4000);
+            payload = { mode: "f2", robot_fixers: appData.f2.fixer_robots.map(r => ({lat: r.lat, lng: r.lng})), broken_vehicles: appData.f2.broken_vehicles.map(v => ({type: v.type, lat: v.lat, lng: v.lng})) };
+        }
+        else if (currentMode === 'f3') {
+            if (!appData.f3.start || !appData.f3.end) { alert("❌ Set Start and End points!"); return; }
+            totalSimulatedTimeMs = 5000 + (appData.f3.batteries.length * 5775);
+            payload = { mode: "f3", capacity_km: (val => isNaN(val) ? 150.0 : val)(parseFloat(document.getElementById('f3-capacity-input').value)), start: appData.f3.start, end: appData.f3.end, batteries: appData.f3.batteries.map(b => ({lat: b.lat, lng: b.lng, count: b.count})) };
+        }
+
+        totalSimulatedTimeMs = Math.max(1000, totalSimulatedTimeMs);
+
+        var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 4));
+        var dlAnchorElem = document.createElement('a'); dlAnchorElem.setAttribute("href", dataStr); dlAnchorElem.setAttribute("download", "request.json");
+        document.body.appendChild(dlAnchorElem); dlAnchorElem.click(); dlAnchorElem.remove();
+
+        let overlay = document.getElementById('loading-overlay');
+        let bar = document.getElementById('loading-bar');
+        let pctText = document.getElementById('loading-pct');
+        let timeText = document.getElementById('loading-time');
+
+        overlay.style.display = 'flex';
+        let startTime = performance.now();
+
+        function step(timestamp) {
+            let elapsed = timestamp - startTime;
+            let progress = Math.min(elapsed / totalSimulatedTimeMs, 1.0);
+            bar.style.width = (progress * 100) + '%';
+            pctText.innerText = Math.floor(progress * 100) + '%';
+            let remaining = Math.max(0, (totalSimulatedTimeMs - elapsed) / 1000);
+            timeText.innerText = "Est: " + remaining.toFixed(1) + "s";
+            if (progress < 1.0) {
+                window.loadingAnimationFrame = requestAnimationFrame(step);
+            } else {
+                overlay.style.display = 'none';
+            }
+        }
+        window.loadingAnimationFrame = requestAnimationFrame(step);
+    }
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    function animatePathAsync(marker, coords, msPerMeter) {
+        return new Promise(resolve => {
+            let segments = [];
+            let totalDist = 0;
+            for(let i=0; i<coords.length-1; i++) {
+                let d = map.distance(coords[i], coords[i+1]);
+                segments.push(d); totalDist += d;
+            }
+            let durationMs = totalDist * msPerMeter;
+            let elapsedMs = 0;
+            let lastTime = null;
+
+            function step(timestamp) {
+                if (!lastTime) lastTime = timestamp;
+                let dt = timestamp - lastTime;
+                lastTime = timestamp;
+
+                elapsedMs += dt;
+                if (elapsedMs >= durationMs) {
+                    marker.setLatLng(coords[coords.length-1]);
+                    resolve();
+                    return;
+                }
+
+                let targetDist = (elapsedMs / durationMs) * totalDist;
+                let traveled = 0;
+                for (let i = 0; i < segments.length; i++) {
+                    if (traveled + segments[i] >= targetDist) {
+                        let segProgress = (targetDist - traveled) / segments[i];
+                        let p1 = coords[i], p2 = coords[i+1];
+                        let lat = p1[0] + (p2[0] - p1[0]) * segProgress;
+                        let lng = p1[1] + (p2[1] - p1[1]) * segProgress;
+                        marker.setLatLng([lat, lng]);
+                        break;
+                    }
+                    traveled += segments[i];
+                }
+                window.currentAnimId = requestAnimationFrame(step);
+            }
+            window.currentAnimId = requestAnimationFrame(step);
+        });
+    }
+
+    window.isSwarmPaused = false;
+    function togglePause() {
+        window.isSwarmPaused = !window.isSwarmPaused;
+        let btn = document.getElementById('btn-pause');
+        if (window.isSwarmPaused) {
+            btn.innerHTML = "▶️ Resume Swarm"; btn.style.background = "#28a745"; btn.style.color = "white";
+        } else {
+            btn.innerHTML = "⏸️ Pause Swarm"; btn.style.background = "#ffc107"; btn.style.color = "#000";
+        }
+    }
+
+    function loadResponse(event) {
+        var file = event.target.files[0];
+        if (!file) return;
+
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                if (window.currentAnimId) cancelAnimationFrame(window.currentAnimId);
+                var res = JSON.parse(e.target.result);
+
+                if (res.error) {
+                    alert("❌ MISSION FAILED:\n" + res.error);
+                    document.getElementById('response-file').value = "";
+                    return;
+                }
+
+                // 🟢 1. INTERCEPT COLLISION BEFORE THE MAP WIPES
+                if (res.mode === 'f3' && res.status === 'collision') {
+                    alert("⚠️ " + res.collision_data.message);
+
+                    res.collision_data.collided_indices.forEach(idx => {
+                        if (idx !== -1) {
+                            let uiBat = document.getElementById(`f3-bat-ui-${idx}`);
+                            if (uiBat) uiBat.classList.add('battery-collision');
+                        }
+                    });
+                    document.getElementById('response-file').value = "";
+                    return; // 🛑 HALT: Stop the engine, don't clear the map!
+                }
+
+                // 🟢 2. SAFE TO WIPE MAP (No collisions detected)
+                routeLayer.clearLayers();
+                markersLayer.clearLayers();
+
+                let pauseBtn = document.getElementById('btn-pause');
+                let restartBtn = document.getElementById('btn-restart');
+                let timelineContainer = document.getElementById('timeline-container');
+                pauseBtn.style.display = 'none'; restartBtn.style.display = 'none';
+                if (timelineContainer) timelineContainer.style.display = 'none';
+
+                // =============================================================
+                // F1 RESPONSE LOGIC
+                // =============================================================
+                if (res.mode === 'f1') {
+                    let startIcon = new L.Icon.Default();
+                    let endIcon = new L.Icon.Default();
+
+                    L.marker([res.snapped_start.lat, res.snapped_start.lng], {icon: startIcon}).addTo(routeLayer);
+                    L.marker([res.snapped_end.lat, res.snapped_end.lng], {icon: endIcon}).addTo(routeLayer);
+
+                    if (res.snapped_stations) {
+                        res.snapped_stations.forEach((st) => {
+                            let isUsed = res.used_stations.some(used => used.lat === st.lat && used.lng === st.lng);
+                            let stationClass = isUsed ? "ev-station used" : "ev-station unused";
+                            let stationText = isUsed ? "⚡ USED" : "🔌 IDLE";
+                            let evIcon = L.divIcon({ html: `<div class="${stationClass}" id="station-${st.lat}-${st.lng}">${stationText}</div>`, className: "" });
+                            L.marker([st.lat, st.lng], {icon: evIcon, zIndexOffset: 500}).addTo(routeLayer);
+                        });
+                    }
+
+                    let fullPathCoords = [];
+                    let realTotalDist = 0;
+
+                    res.legs.forEach(leg => {
+                        let latlngs = leg.path.map(p => [p.lat, p.lng]);
+                        fullPathCoords = fullPathCoords.concat(latlngs);
+                        L.polyline(latlngs, {color: '#8A2BE2', weight: 5, opacity: 0.8}).addTo(routeLayer);
+
+                        let midIndex = Math.floor(latlngs.length / 2);
+                        let distLabel = L.divIcon({ className: 'custom-div-icon', html: `<div class="dist-label">${leg.distance_km.toFixed(1)} km</div>` });
+                        L.marker(latlngs[midIndex], {icon: distLabel, zIndexOffset: 600}).addTo(routeLayer);
+
+                        for(let i=0; i<latlngs.length-1; i++) { realTotalDist += map.distance(latlngs[i], latlngs[i+1]); }
+                    });
+
+                    let unitIcon = L.divIcon({ html: "🤖", className: "basel-icon", iconSize: [35, 35], iconAnchor: [17, 17] });
+                    let unitMarker = L.marker(fullPathCoords[0], {icon: unitIcon, zIndexOffset: 1000}).addTo(routeLayer);
+                    map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+
+                    let f1w = document.getElementById('f1-info-window');
+                    if (f1w) {
+                        f1w.style.display = 'flex';
+                        document.getElementById('f1-info-val').innerText = (realTotalDist / 1000).toFixed(2) + " km";
+                    }
+
+                    // 🟢 F1 DETERMINISTIC KEYFRAME ENGINE (VIDEO SCRUBBER)
+                    let keyframes = [];
+                    let stationPauses = [];
+                    let currentTime = 0;
+                    let speedMult = 40000 / realTotalDist; // Keep the original 40-second total pace
+
+                    keyframes.push({ time: currentTime, lat: fullPathCoords[0][0], lng: fullPathCoords[0][1] });
+
+                    for (let i = 0; i < res.legs.length; i++) {
+                        let leg = res.legs[i];
+                        let coords = leg.path;
+
+                        for (let j = 0; j < coords.length - 1; j++) {
+                            let p1 = [coords[j].lat, coords[j].lng];
+                            let p2 = [coords[j+1].lat, coords[j+1].lng];
+                            let d = map.distance(p1, p2);
+                            currentTime += (d * speedMult);
+                            keyframes.push({ time: currentTime, lat: p2[0], lng: p2[1] });
+                        }
+
+                        if (i < res.legs.length - 1) {
+                            let endPt = coords[coords.length - 1];
+                            stationPauses.push({ start: currentTime, end: currentTime + 750, lat: endPt.lat, lng: endPt.lng });
+                            currentTime += 750;
+                            keyframes.push({ time: currentTime, lat: endPt.lat, lng: endPt.lng }); // Stay in place while charging
+                        }
+                    }
+
+                    let maxTimelineTime = currentTime;
+
+                    // 🟢 ACTIVATE VIDEO TIMELINE UI
+                    let timelineSlider = document.getElementById('anim-timeline');
+                    let timelineContainer = document.getElementById('timeline-container');
+                    timelineContainer.style.display = 'block';
+                    timelineSlider.max = maxTimelineTime;
+                    timelineSlider.value = 0;
+
+                    pauseBtn.style.display = 'block'; pauseBtn.innerHTML = "⏸️ Pause"; window.isSwarmPaused = false;
+                    window.animTime = 0;
+                    let lastTime = null;
+
+                    timelineSlider.oninput = function () {
+                        window.animTime = parseFloat(this.value);
+                        updateF1DeterministicState();
+                    };
+
+                    function updateF1DeterministicState() {
+                        // 1. Position B.A.S.E.L Smoothly
+                        if (window.animTime >= maxTimelineTime) {
+                            unitMarker.setLatLng([keyframes[keyframes.length - 1].lat, keyframes[keyframes.length - 1].lng]);
+                        } else {
+                            for (let i = 0; i < keyframes.length - 1; i++) {
+                                if (window.animTime >= keyframes[i].time && window.animTime < keyframes[i + 1].time) {
+                                    let k1 = keyframes[i]; let k2 = keyframes[i + 1];
+                                    let progress = (window.animTime - k1.time) / (k2.time - k1.time);
+                                    let lat = k1.lat + (k2.lat - k1.lat) * progress;
+                                    let lng = k1.lng + (k2.lng - k1.lng) * progress;
+                                    unitMarker.setLatLng([lat, lng]);
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 2. Synchronize Station Glowing State
+                        stationPauses.forEach(pause => {
+                            let stDiv = document.getElementById(`station-${pause.lat}-${pause.lng}`);
+                            if (stDiv) {
+                                if (window.animTime >= pause.start && window.animTime <= pause.end) {
+                                    stDiv.classList.add('glowing');
+                                } else {
+                                    stDiv.classList.remove('glowing');
+                                }
+                            }
+                        });
+                    }
+
+                    function animateF1Scrubber(timestamp) {
+                        if (!lastTime) lastTime = timestamp;
+                        let dt = timestamp - lastTime;
+                        lastTime = timestamp;
+
+                        if (!window.isSwarmPaused && window.animTime < maxTimelineTime) {
+                            window.animTime += dt;
+                            if (window.animTime > maxTimelineTime) window.animTime = maxTimelineTime;
+                            timelineSlider.value = window.animTime;
+                            updateF1DeterministicState();
+                        }
+
+                        if (window.animTime >= maxTimelineTime) {
+                            pauseBtn.style.display = 'none';
+                            restartBtn.style.display = 'block';
+                        }
+                        window.currentAnimId = requestAnimationFrame(animateF1Scrubber);
+                    }
+
+                    window.restartAnimation = function() {
+                        if (window.currentAnimId) cancelAnimationFrame(window.currentAnimId);
+                        window.isSwarmPaused = false;
+                        pauseBtn.style.display = 'block'; pauseBtn.innerHTML = "⏸️ Pause"; pauseBtn.style.background = "#ffc107";
+                        restartBtn.style.display = 'none';
+                        window.animTime = 0;
+                        timelineSlider.value = 0;
+                        lastTime = null;
+                        updateF1DeterministicState();
+                        window.currentAnimId = requestAnimationFrame(animateF1Scrubber);
+                    };
+
+                    updateF1DeterministicState();
+                    window.currentAnimId = requestAnimationFrame(animateF1Scrubber);
+                }
+
+// =============================================================
+                    // F2 RESPONSE LOGIC (DETERMINISTIC TIMELINE ENGINE)
+                // =============================================================
+                else if (res.mode === 'f2') {
+                    const SWARM_COLORS = ['#007bff', '#28a745', '#fd7e14', '#6f42c1', '#17a2b8', '#e83e8c', '#dc3545', '#20c997'];
+
+                    if(res.corrected_vehicles) {
+                        res.corrected_vehicles.forEach(v => {
+                            let origData = appData.f2.broken_vehicles[v.id] || { type: 'passengers-car', req: 1 };
+
+                            let emoji = "🚗"; let iconSize = 34;
+                            if (origData.type === 'two-wheeler') { emoji = "🚲"; iconSize = 28; }
+                            else if (origData.type === 'passengers-car') { emoji = "🚙"; iconSize = 34; }
+                            else if (origData.type === 'heavy-transport') { emoji = "🚚"; iconSize = 40; }
+                            else if (origData.type === 'complex-vehicle') { emoji = "🚒"; iconSize = 46; }
+
+                            let badge = `<div class="f2-vehicle-badge" style="position:absolute; top:-10px; right:-10px; transform:none;">${origData.req}</div>`;
+                            let iconHtml = `<div id="f2-veh-anim-${v.id}" style="font-size:${iconSize}px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5)); position:relative; width:${iconSize}px; text-align:center; transform-origin: bottom center;">${emoji}${badge}</div>`;
+                            let vehicleIcon = L.divIcon({ html: iconHtml, className: "", iconSize: [iconSize, iconSize], iconAnchor: [iconSize/2, iconSize/2] });
+                            L.marker([v.lat, v.lng], {icon: vehicleIcon}).addTo(routeLayer);
+                        });
+                    }
+
+                    let activeSwarm = []; let dispatchedIds = []; let colorIndex = 0;
+                    let vehicleSlotCounters = {}; const FORMATION_OFFSET = 0.00010;
+                    let totalF2Distance = 0;
+                    let maxTimelineTime = 0;
+                    let vehicleDanceTimes = {}; // 🟢 Track exactly when each vehicle's repair starts
+
+                    if(res.assignments) {
+                        // 1st Pass: Calculate precise dance synchronization times
+                        res.assignments.forEach((assignment, idx) => {
+                            let latlngs = assignment.path.map(p => [p.lat, p.lng]);
+                            let totalD = 0;
+                            for(let i=0; i<latlngs.length-1; i++) { totalD += map.distance(latlngs[i], latlngs[i+1]); }
+
+                            let arrivalTime = totalD; // 🟢 NO STAGGER: Everyone starts at time 0
+                            let vId = assignment.target_vehicle_id;
+
+                            if (vehicleDanceTimes[vId] === undefined || arrivalTime > vehicleDanceTimes[vId]) {
+                                vehicleDanceTimes[vId] = arrivalTime; // The latest arrival dictates the start
+                            }
+                            if (arrivalTime > maxTimelineTime) maxTimelineTime = arrivalTime;
+                        });
+
+                        maxTimelineTime += 2000; // Let the dance play out for 2 seconds at the end
+
+                        // 2nd Pass: Build the deterministic keyframes
+                        res.assignments.forEach((assignment, idx) => {
+                            dispatchedIds.push(assignment.robot_id);
+                            let pathColor = SWARM_COLORS[colorIndex % SWARM_COLORS.length]; colorIndex++;
+                            let latlngs = assignment.path.map(p => [p.lat, p.lng]);
+                            let vId = assignment.target_vehicle_id;
+                            if (vehicleSlotCounters[vId] === undefined) vehicleSlotCounters[vId] = 0;
+                            let slot = vehicleSlotCounters[vId]++;
+                            let origData = appData.f2.broken_vehicles[vId] || { req: 1 };
+                            let req = origData.req;
+
+                            let center = latlngs[latlngs.length - 1];
+                            let fLat = center[0], fLng = center[1];
+                            if (req === 1) { fLng += FORMATION_OFFSET; }
+                            else if (req === 2) { if (slot === 0) fLng -= FORMATION_OFFSET; if (slot === 1) fLng += FORMATION_OFFSET; }
+                            else if (req === 3) {
+                                if (slot === 0) fLat += FORMATION_OFFSET;
+                                if (slot === 1) { fLat -= FORMATION_OFFSET; fLng += FORMATION_OFFSET; }
+                                if (slot === 2) { fLat -= FORMATION_OFFSET; fLng -= FORMATION_OFFSET; }
+                            } else if (req >= 4) {
+                                if (slot === 0) fLat += FORMATION_OFFSET; if (slot === 1) fLat -= FORMATION_OFFSET;
+                                if (slot === 2) fLng += FORMATION_OFFSET; if (slot === 3) fLng -= FORMATION_OFFSET;
+                            }
+                            latlngs[latlngs.length - 1] = [fLat, fLng];
+                            L.polyline(latlngs, {color: pathColor, weight: 4, opacity: 0.8, dashArray: '5, 10'}).addTo(routeLayer);
+
+                            let robotIcon = L.divIcon({ html: `<div id="f2-robot-anim-${idx}" style="font-size:25px; transform-origin: bottom center;">🤖</div>`, className: "basel-icon", iconSize: [25, 25], iconAnchor: [12, 12] });
+                            let marker = L.marker(latlngs[0], {icon: robotIcon, zIndexOffset: 1000}).addTo(routeLayer);
+
+                            // Build Keyframes
+                            let keyframes = [];
+                            let currentTime = 0; // 🟢 NO STAGGER: Everyone starts at exactly time 0
+                            keyframes.push({time: currentTime, lat: latlngs[0][0], lng: latlngs[0][1]});
+
+                            for(let i=0; i<latlngs.length-1; i++) {
+                                let d = map.distance(latlngs[i], latlngs[i+1]);
+                                currentTime += d;
+                                totalF2Distance += d;
+                                keyframes.push({time: currentTime, lat: latlngs[i+1][0], lng: latlngs[i+1][1]});
+                            }
+
+                            activeSwarm.push({
+                                idx: idx, targetId: vId,
+                                marker: marker, keyframes: keyframes, isSpawned: false
+                            });
+                        });
+                    }
+
+                    // Enable Total Distance UI
+                    document.getElementById('f2-distance-counter').style.display = 'flex';
+                    document.getElementById('f2-dist-val').innerText = (totalF2Distance / 1000).toFixed(2) + " km";
+
+                    // 🟢 ACTIVATE VIDEO TIMELINE UI
+                    let timelineSlider = document.getElementById('anim-timeline');
+                    let timelineContainer = document.getElementById('timeline-container');
+                    timelineContainer.style.display = 'block';
+                    timelineSlider.max = maxTimelineTime;
+                    timelineSlider.value = 0;
+
+                    map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+                    pauseBtn.style.display = 'block'; pauseBtn.innerHTML = "⏸️ Pause Swarm"; window.isSwarmPaused = false;
+                    window.animTime = 0;
+                    let lastTime = null;
+
+                    // Handle manual scrubbing
+                    timelineSlider.oninput = function () {
+                        window.animTime = parseFloat(this.value);
+                        updateF2DeterministicState();
+                    };
+
+                    // Core Render Logic based purely on time
+                    function updateF2DeterministicState() {
+                        activeSwarm.forEach(robot => {
+                            let kfs = robot.keyframes;
+                            let spawnTime = kfs[0].time;
+                            let arriveTime = kfs[kfs.length-1].time;
+                            let dTime = vehicleDanceTimes[robot.targetId];
+
+                            if (window.animTime < spawnTime) {
+                                if (robot.isSpawned) { routeLayer.removeLayer(robot.marker); robot.isSpawned = false; }
+                                return;
+                            }
+                            if (!robot.isSpawned) {
+                                robot.marker.addTo(routeLayer); robot.isSpawned = true;
+                            }
+
+                            // Positional Interpolation
+                            if (window.animTime >= arriveTime) {
+                                robot.marker.setLatLng([kfs[kfs.length - 1].lat, kfs[kfs.length - 1].lng]);
+                            } else {
+                                for (let i = 0; i < kfs.length - 1; i++) {
+                                    if (window.animTime >= kfs[i].time && window.animTime < kfs[i + 1].time) {
+                                        let k1 = kfs[i]; let k2 = kfs[i + 1];
+                                        let progress = (window.animTime - k1.time) / (k2.time - k1.time);
+                                        let lat = k1.lat + (k2.lat - k1.lat) * progress;
+                                        let lng = k1.lng + (k2.lng - k1.lng) * progress;
+                                        robot.marker.setLatLng([lat, lng]);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Tool & Dance State
+                            let rDiv = document.getElementById(`f2-robot-anim-${robot.idx}`);
+                            if (rDiv) {
+                                if (window.animTime >= dTime) {
+                                    rDiv.classList.add('fixing-dance'); rDiv.innerHTML = "🤖🔧";
+                                } else {
+                                    rDiv.classList.remove('fixing-dance'); rDiv.innerHTML = "🤖";
+                                }
+                            }
+                        });
+
+                        // Vehicle Dance State
+                        if (res.corrected_vehicles) {
+                            res.corrected_vehicles.forEach(v => {
+                                let vDiv = document.getElementById(`f2-veh-anim-${v.id}`);
+                                let dTime = vehicleDanceTimes[v.id];
+                                if (vDiv && dTime !== undefined) {
+                                    if (window.animTime >= dTime) vDiv.classList.add('fixing-dance');
+                                    else vDiv.classList.remove('fixing-dance');
+                                }
+                            });
+                        }
+                    }
+
+                    function animateF2Scrubber(timestamp) {
+                        if (!lastTime) lastTime = timestamp;
+                        let dt = timestamp - lastTime;
+                        lastTime = timestamp;
+
+                        if (!window.isSwarmPaused && window.animTime < maxTimelineTime) {
+                            window.animTime += dt;
+                            if (window.animTime > maxTimelineTime) window.animTime = maxTimelineTime;
+                            timelineSlider.value = window.animTime;
+                            updateF2DeterministicState();
+                        }
+
+                        if (window.animTime >= maxTimelineTime) {
+                            pauseBtn.style.display = 'none';
+                            restartBtn.style.display = 'block';
+                        }
+                        window.currentAnimId = requestAnimationFrame(animateF2Scrubber);
+                    }
+
+                    window.restartAnimation = function() {
+                        if (window.currentAnimId) cancelAnimationFrame(window.currentAnimId);
+                        window.isSwarmPaused = false;
+                        pauseBtn.style.display = 'block'; pauseBtn.innerHTML = "⏸️ Pause Swarm"; pauseBtn.style.background = "#ffc107";
+                        restartBtn.style.display = 'none';
+                        window.animTime = 0;
+                        timelineSlider.value = 0;
+                        lastTime = null;
+                        updateF2DeterministicState();
+                        window.currentAnimId = requestAnimationFrame(animateF2Scrubber);
+                    };
+
+                    // Initial boot
+                    updateF2DeterministicState();
+                    window.currentAnimId = requestAnimationFrame(animateF2Scrubber);
+
+                    // 🟢 BRING BACK STANDBY ROBOTS
+                    appData.f2.fixer_robots.forEach((r, idx) => {
+                        if (!dispatchedIds.includes(idx)) {
+                            let idleHtml = `<div class="idle-label">💤 Standby</div>🤖`;
+                            let idleIcon = L.divIcon({ html: idleHtml, className: "basel-idle-icon", iconSize: [25, 25], iconAnchor: [12, 12] });
+                            L.marker([r.lat, r.lng], {icon: idleIcon}).addTo(routeLayer);
+                        }
+                    });
+                }
+                else if (res.mode === 'f3') {
+                    let startIcon = new L.Icon.Default(); // Falls back to default blue markers
+                    let endIcon = new L.Icon.Default();
+
+                    // 🟢 OVERWRITE UI WITH C++ MASTER DATA
+                    if (res.official_batteries) {
+                        appData.f3.batteries = res.official_batteries;
+                        renderAll(); // Instantly syncs the side-menu and map!
+                    }
+
+                    // Just draw them EXACTLY where C++ says they are. No guessing.
+                    appData.f3.batteries.forEach((c, i) => {
+                        let html = `<div class="battery-icon" id="f3-bat-anim-${i}">🔋<div class="battery-badge" id="f3-badge-anim-${i}">${c.count}</div></div>`;
+                        L.marker([c.lat, c.lng], {
+                            icon: L.divIcon({html: html, className: ""}),
+                            zIndexOffset: 500
+                        }).addTo(routeLayer);
+                    });
+
+                    // 🟢 INFINITE MODE
+                    if (res.status === 'infinite') {
+                        let pathCoords = res.path.map(p => [p.lat, p.lng]);
+                        L.polyline(pathCoords, { color: '#8A2BE2', weight: 5, opacity: 0.8, dashArray: '5, 10' }).addTo(routeLayer);
+                        L.marker(pathCoords[0], {icon: startIcon}).addTo(routeLayer);
+                        L.marker(pathCoords[pathCoords.length - 1], {icon: endIcon}).addTo(routeLayer);
+                        map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+
+                        let segDists = [];
+                        for (let i = 0; i < pathCoords.length - 1; i++) {
+                            segDists.push(map.distance(pathCoords[i], pathCoords[i + 1]));
+                        }
+                        let totalD = segDists.reduce((a, b) => a + b, 0);
+
+                        let activeInfiniteunits = [];
+                        let spawnInterval = 2000; // SPAWN EVERY 2 SEC
+                        let timeSinceLastSpawn = spawnInterval;
+                        let lastTime = null;
+
+                        pauseBtn.style.display = 'block';
+                        pauseBtn.innerHTML = "⏸️ Pause Infinite Stream";
+                        window.isSwarmPaused = false;
+
+                        function animateInfinite(timestamp) {
+                            if (!lastTime) lastTime = timestamp;
+                            let deltaTime = timestamp - lastTime;
+                            lastTime = timestamp;
+
+                            if (!window.isSwarmPaused) {
+                                timeSinceLastSpawn += deltaTime;
+                                if (timeSinceLastSpawn >= spawnInterval) {
+
+                                    let robotIcon = L.divIcon({ html: "🤖", className: "basel-icon", iconSize: [35, 35], iconAnchor: [17, 17] });
+                                    let marker = L.marker(pathCoords[0], { icon: robotIcon, zIndexOffset: 1000 }).addTo(routeLayer);
+                                    activeInfiniteunits.push({marker: marker, elapsedMs: 0});
+                                    timeSinceLastSpawn = 0;
+                                }
+
+                                for (let j = activeInfiniteunits.length - 1; j >= 0; j--) {
+                                    let robot = activeInfiniteunits[j];
+                                    robot.elapsedMs += deltaTime;
+                                    if (robot.elapsedMs >= totalD) {
+                                        // REACHED END -> DELETE
+                                        routeLayer.removeLayer(robot.marker);
+                                        activeInfiniteunits.splice(j, 1);
+                                    } else {
+                                        let targetDist = robot.elapsedMs; // 1km/s
+                                        let traveled = 0;
+                                        for (let i = 0; i < segDists.length; i++) {
+                                            if (traveled + segDists[i] >= targetDist) {
+                                                let segProgress = (targetDist - traveled) / segDists[i];
+                                                let p1 = pathCoords[i], p2 = pathCoords[i + 1];
+                                                let lat = p1[0] + (p2[0] - p1[0]) * segProgress;
+                                                let lng = p1[1] + (p2[1] - p1[1]) * segProgress;
+                                                robot.marker.setLatLng([lat, lng]);
+                                                break;
+                                            }
+                                            traveled += segDists[i];
+                                        }
+                                    }
+                                }
+                            }
+                            window.currentAnimId = requestAnimationFrame(animateInfinite);
+                        }
+
+                        window.currentAnimId = requestAnimationFrame(animateInfinite);
+                        return;
+                    }
+
+                    // 🟢 FINITE SWARM BOTTLENECK MODE
+                    if (res.swarm_info && res.swarm_info.length > 0) {
+                        let firstPath = res.swarm_info[0].path;
+                        L.marker([firstPath[0].lat, firstPath[0].lng], {icon: startIcon}).addTo(routeLayer);
+                        let lastPath = res.swarm_info[res.swarm_info.length - 1].path;
+                        L.marker([lastPath[lastPath.length - 1].lat, lastPath[lastPath.length - 1].lng], {icon: endIcon}).addTo(routeLayer);
+
+                        let activeSwarm = [];
+                        let SWARM_COLORS = ['#007bff', '#28a745', '#fd7e14', '#6f42c1', '#17a2b8', '#e83e8c', '#dc3545', '#20c997'];
+                        let maxTimelineTime = 0;
+
+                        res.swarm_info.forEach((leg, idx) => {
+                            let pathColor = SWARM_COLORS[idx % SWARM_COLORS.length];
+                            let coords = leg.path.map(p => [p.lat, p.lng]);
+                            L.polyline(coords, { color: pathColor, weight: 4, opacity: 0.8, dashArray: '5, 10' }).addTo(routeLayer);
+
+                            // 🟢 NUMBERED BASEL BADGE
+                            let robotIcon = L.divIcon({
+                                html: `<div style="position:relative;">🤖<div class="basel-number-badge">${idx + 1}</div></div>`,
+                                className: "basel-icon",
+                                iconSize: [35, 35],
+                                iconAnchor: [17, 17]
+                            });
+
+                            let marker = L.marker(coords[0], {icon: robotIcon, zIndexOffset: 1000}).addTo(routeLayer);
+
+                            // 🟢 BUILD KEYFRAMES FOR TIME TRAVEL
+                            let keyframes = [];
+                            let currentTime = 2000 * idx; // Staggered Spawn Time
+                            keyframes.push({time: currentTime, lat: coords[0][0], lng: coords[0][1]});
+
+                            let batIndexLookup = 0;
+                            let batteriesPassed = leg.batteries_it_passed || [];
+
+                            for (let i = 0; i < coords.length - 1; i++) {
+                                let d = map.distance(coords[i], coords[i + 1]);
+                                currentTime += d;
+                                let nextLat = coords[i + 1][0];
+                                let nextLng = coords[i + 1][1];
+
+                                let hitBattery = false;
+                                let matchedUIBat = null;
+                                if (batIndexLookup < batteriesPassed.length) {
+                                    let targetBat = batteriesPassed[batIndexLookup];
+
+                                    // (Using < 1 meter just to handle Javascript floating-point rounding)
+                                    if (map.distance([nextLat, nextLng], [targetBat.lat, targetBat.lng]) < 1) {
+                                        hitBattery = true;
+                                        batIndexLookup++;
+                                        matchedUIBat = appData.f3.batteries.findIndex(b => b.lat === targetBat.lat && b.lng === targetBat.lng);
+                                    }
+                                }
+                                keyframes.push({ time: currentTime, lat: nextLat, lng: nextLng, hitBat: hitBattery ? matchedUIBat : null });
+
+                                if (hitBattery) {
+                                    currentTime += 750; // Pause for 0.75s
+                                    keyframes.push({time: currentTime, lat: nextLat, lng: nextLng});
+                                }
+                            }
+
+                            if (currentTime > maxTimelineTime) maxTimelineTime = currentTime;
+                            activeSwarm.push({marker: marker, keyframes: keyframes, isSpawned: false});
+                        });
+
+                        map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+
+                        // 🟢 ACTIVATE VIDEO TIMELINE UI
+                        let timelineSlider = document.getElementById('anim-timeline');
+                        let timelineContainer = document.getElementById('timeline-container');
+                        timelineContainer.style.display = 'block';
+                        timelineSlider.max = maxTimelineTime;
+                        timelineSlider.value = 0;
+
+                        pauseBtn.style.display = 'block';
+                        pauseBtn.innerHTML = "⏸️ Pause Swarm";
+                        window.isSwarmPaused = false;
+                        window.animTime = 0;
+                        let lastTime = null;
+
+                        // 🟢 HANDLE USER DRAGGING SLIDER
+                        timelineSlider.oninput = function () {
+                            window.animTime = parseFloat(this.value);
+                            updateDeterministicState();
+                        };
+
+                        // 🟢 THE DETERMINISTIC CALCULATION ENGINE
+                        function updateDeterministicState() {
+                            let currentBatCounts = appData.f3.batteries.map(b => b.count);
+                            let spawnedCount = 0; // Live counter variable
+
+                            activeSwarm.forEach(robot => {
+                                let kfs = robot.keyframes;
+                                if (window.animTime < kfs[0].time) {
+                                    if (robot.isSpawned) {
+                                        routeLayer.removeLayer(robot.marker);
+                                        robot.isSpawned = false;
+                                    }
+                                    return;
+                                }
+                                if (!robot.isSpawned) {
+                                    robot.marker.addTo(routeLayer);
+                                    robot.isSpawned = true;
+                                }
+                                if (robot.isSpawned) spawnedCount++; // Increment count
+
+                                if (window.animTime >= kfs[kfs.length - 1].time) {
+                                    robot.marker.setLatLng([kfs[kfs.length - 1].lat, kfs[kfs.length - 1].lng]);
+                                } else {
+                                    for (let i = 0; i < kfs.length - 1; i++) {
+                                        if (window.animTime >= kfs[i].time && window.animTime < kfs[i + 1].time) {
+                                            let k1 = kfs[i];
+                                            let k2 = kfs[i + 1];
+                                            let progress = (window.animTime - k1.time) / (k2.time - k1.time);
+                                            let lat = k1.lat + (k2.lat - k1.lat) * progress;
+                                            let lng = k1.lng + (k2.lng - k1.lng) * progress;
+                                            robot.marker.setLatLng([lat, lng]);
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                kfs.forEach(k => {
+                                    if (k.hitBat !== null && window.animTime >= k.time) {
+                                        if (currentBatCounts[k.hitBat] > 0) currentBatCounts[k.hitBat]--;
+                                    }
+                                });
+                            });
+
+                            appData.f3.batteries.forEach((c, i) => {
+                                let badge = document.getElementById(`f3-badge-anim-${i}`);
+                                let bDiv = document.getElementById(`f3-bat-anim-${i}`);
+                                if (badge) badge.innerText = currentBatCounts[i];
+
+                                let isGlowing = false;
+                                let isUsed = currentBatCounts[i] < c.count; // Has it been touched in the timeline?
+
+                                activeSwarm.forEach(robot => {
+                                    robot.keyframes.forEach(k => {
+                                        if (k.hitBat === i && window.animTime >= k.time && window.animTime <= k.time + 750) isGlowing = true;
+                                    });
+                                });
+
+                                if (bDiv) {
+                                    if (isGlowing) bDiv.classList.add('glowing'); else bDiv.classList.remove('glowing');
+                                    if (isUsed) bDiv.classList.add('used-pile'); else bDiv.classList.remove('used-pile');
+                                }
+                            });
+
+                            // Update Live UI
+                            document.getElementById('f3-live-counter').style.display = 'flex';
+                            document.getElementById('f3-count-val').innerText = spawnedCount;
+                        }
+
+                        function animateScrubber(timestamp) {
+                            if (!lastTime) lastTime = timestamp;
+                            let dt = timestamp - lastTime;
+                            lastTime = timestamp;
+
+                            if (!window.isSwarmPaused && window.animTime < maxTimelineTime) {
+                                window.animTime += dt;
+                                if (window.animTime > maxTimelineTime) window.animTime = maxTimelineTime;
+                                timelineSlider.value = window.animTime;
+                                updateDeterministicState();
+                            }
+
+                            if (window.animTime >= maxTimelineTime) {
+                                pauseBtn.style.display = 'none';
+                                restartBtn.style.display = 'block';
+                            }
+                            window.currentAnimId = requestAnimationFrame(animateScrubber);
+                        }
+
+                        window.restartAnimation = function () {
+                            if (window.currentAnimId) cancelAnimationFrame(window.currentAnimId);
+                            window.isSwarmPaused = false;
+                            pauseBtn.style.display = 'block';
+                            pauseBtn.innerHTML = "⏸️ Pause Swarm";
+                            pauseBtn.style.background = "#ffc107";
+                            restartBtn.style.display = 'none';
+                            window.animTime = 0;
+                            timelineSlider.value = 0;
+                            lastTime = null;
+                            updateDeterministicState();
+                            window.currentAnimId = requestAnimationFrame(animateScrubber);
+                        };
+
+                        updateDeterministicState();
+                        window.currentAnimId = requestAnimationFrame(animateScrubber);
+                    } else {
+                        alert("⚠️ MISSION FAILED:\nUnfortunately, no B.A.S.E.L. units could reach the destination under the current constraints.");
+                    }
+                }
+
+            } catch (err) {
+                alert("❌ UI Engine Error:\n" + err.message);
+                console.error(err);
+            }
+            document.getElementById('response-file').value = "";
+        };
+        reader.readAsText(file);
+    }
+
+    // =========================================================================
+    // 🟢 MEASUREMENT TOOL (Drag & Hold)
+    // =========================================================================
+    window.isMeasuring = false;
+    let measureLine = null;
+    let measureTooltip = null;
+    let measureStartPoint = null;
+
+    window.toggleMeasureMode = function() {
+        window.isMeasuring = !window.isMeasuring;
+        let btn = document.getElementById('map-measure-btn');
+        if(window.isMeasuring) {
+            btn.style.background = "#dc3545"; // Red active state
+            btn.style.color = "white";
+            btn.innerHTML = "📏 Measuring (Hold & Drag)";
+        } else {
+            btn.style.background = "white";
+            btn.style.color = "#333";
+            btn.innerHTML = "📏 Measure Tool";
+            cleanupMeasure();
+        }
+    };
+
+    function cleanupMeasure() {
+        if(measureLine) map.removeLayer(measureLine);
+        if(measureTooltip) map.removeLayer(measureTooltip);
+        measureLine = null; measureTooltip = null; measureStartPoint = null;
+        map.dragging.enable();
+    }
+
+    // START HOLDING
+    map.on('mousedown', function(e) {
+        if (!window.isMeasuring) return;
+        map.dragging.disable(); // Stop map panning
+        measureStartPoint = e.latlng;
+        measureLine = L.polyline([measureStartPoint, measureStartPoint], {color: '#dc3545', weight: 4, dashArray: '5, 10'}).addTo(map);
+
+        let icon = L.divIcon({ className: '', html: `<div style="color: #dc3545; font-weight: bold; font-size: 16px; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff; white-space: nowrap; transform: translate(-50%, -50%);">0.0 km</div>` });
+        measureTooltip = L.marker(measureStartPoint, {icon: icon, interactive: false, zIndexOffset: 2000}).addTo(map);
+    });
+
+    // DRAGGING
+    map.on('mousemove', function(e) {
+        if (!window.isMeasuring || !measureStartPoint) return;
+        let currentPoint = e.latlng;
+        measureLine.setLatLngs([measureStartPoint, currentPoint]);
+        let distKm = map.distance(measureStartPoint, currentPoint) / 1000.0;
+
+        let midLat = (measureStartPoint.lat + currentPoint.lat) / 2;
+        let midLng = (measureStartPoint.lng + currentPoint.lng) / 2;
+        measureTooltip.setLatLng([midLat, midLng]);
+
+        let icon = L.divIcon({ className: '', html: `<div style="color: #dc3545; font-weight: bold; font-size: 16px; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff; white-space: nowrap; transform: translate(-50%, -50%);">${distKm.toFixed(2)} km</div>` });
+        measureTooltip.setIcon(icon);
+    });
+
+    // RELEASE HOLD
+    map.on('mouseup', function(e) {
+        if (!window.isMeasuring) return;
+        cleanupMeasure(); // Immediately wipe the line
+    });
+</script>
+
+</body>
+</html>
+
