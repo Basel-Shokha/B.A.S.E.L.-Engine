@@ -54,43 +54,17 @@ Compiles everything and launches the engine immediately. You'll see:
 
 The engine is now running and watching for a `request.json` file in the same folder.
 
-#### Step 4 — Send it a request
+#### Step 4 — Open the UI in your browser
 
-Drop a `request.json` file in the project folder. The engine detects it automatically, runs the solver, writes `response.json`, and goes back to waiting.
+Open `index.html` directly in Chrome — just double-click it or drag it into a browser tab. No server needed.
 
-**EV Route (f1):**
-```json
-{
-  "mode": "f1",
-  "start": { "lat": 32.08, "lng": 34.78 },
-  "end":   { "lat": 31.76, "lng": 35.23 },
-  "battery_meters": 80000,
-  "charging_stations": [{ "lat": 31.90, "lng": 35.00 }]
-}
-```
+The UI shows a map with a panel on the right. Pick your solver (F1, F2, or F3), click the map to place your points, then hit **📥 1. Download Request**. This saves a `request.json` to your Downloads — move it into the project folder (same place as the engine binary).
 
-**Fleet Dispatch (f2):**
-```json
-{
-  "mode": "f2",
-  "robots": [...],
-  "vehicles": [...]
-}
-```
+#### Step 5 — Get your result
 
-**Swarm Control (f3):**
-```json
-{
-  "mode": "f3",
-  "start": { "lat": 32.08, "lng": 34.78 },
-  "end":   { "lat": 31.76, "lng": 35.23 },
-  "units": 4,
-  "battery_capacity": 50000,
-  "batteries": [...]
-}
-```
+The engine detects `request.json` automatically, processes it, and writes `response.json` in the same folder.
 
-Full request/response specs are in the whitepapers linked above.
+Go back to the browser and hit **📤 2. Load C++ Route** — select `response.json` and the result animates on the map.
 
 ---
 
